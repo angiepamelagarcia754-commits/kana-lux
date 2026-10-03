@@ -33,9 +33,6 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Preparar Android
-        uses: android-actions/setup-android@v3
-
       - name: Instalar dependencias
         run: npm install --no-audit --no-fund
 
