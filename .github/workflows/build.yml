@@ -1,0 +1,85 @@
+name: Construir APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el proyecto
+        uses: actions/checkout@v4
+
+      - name: Ordenar los archivos
+        run: |
+          mkdir -p www assets keystore
+          mv index.html www/
+          mv icon-*.png splash*.png assets/
+          mv debug.keystore keystore/
+
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Preparar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Preparar Android
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar dependencias
+        run: npm install --no-audit --no-fund
+
+      - name: Crear la parte de Android
+        run: npx cap add android
+
+      - name: Ícono y pantalla de inicio
+        continue-on-error: true
+        run: npx @capacitor/assets generate --android --iconBackgroundColor '#0b0b0b' --iconBackgroundColorDark '#0b0b0b' --splashBackgroundColor '#0a0a0a' --splashBackgroundColorDark '#0a0a0a'
+
+      - name: Permisos y número de versión
+        run: |
+          M=android/app/src/main/AndroidManifest.xml
+          grep -q POST_NOTIFICATIONS $M || sed -i 's#</manifest>#    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n</manifest>#' $M
+          sed -i "s/versionCode 1$/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"1.${{ github.run_number }}\"/" android/app/build.gradle
+
+      - name: Copiar la app web
+        run: npx cap sync android
+
+      - name: Firma fija (para poder actualizar sin perder datos)
+        run: |
+          mkdir -p ~/.android
+          cp keystore/debug.keystore ~/.android/debug.keystore
+
+      - name: Compilar APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Nombre del archivo
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk KanaLux.apk
+
+      - name: Guardar APK en Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: KanaLux-apk
+          path: KanaLux.apk
+
+      - name: Publicar en Releases (para descargar desde el celular)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.${{ github.run_number }}
+          name: Kana Lux 1.${{ github.run_number }}
+          body: Descargue KanaLux.apk desde el celular e instálela. Si ya tiene la app, se actualiza sin perder los datos.
+          files: KanaLux.apk
